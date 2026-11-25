@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>M3U Stream Player</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/shaka-player@4.12.6/dist/shaka-player.compiled.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="live-dot" id="syncDot" aria-hidden="true"></span>
+        <h1>M3U Player</h1>
+        <span class="meta-pill" id="channelCount">0 channels</span>
+      </div>
+
+      <div class="controls">
+        <div class="refresh-control" title="Automatic playlist refresh">
+          <span class="meta-text" id="refreshStatus">Syncing…</span>
+          <select id="refreshInterval" aria-label="Auto-refresh interval">
+            <option value="30">30s</option>
+            <option value="60" selected>1m</option>
+            <option value="300">5m</option>
+            <option value="0">Off</option>
+          </select>
+          <button id="refreshBtn" type="button" class="btn-icon" title="Refresh playlist now" aria-label="Refresh playlist now">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="player-pane">
+        <div class="video-frame">
+          <video id="video" controls playsinline autoplay></video>
+          <div class="player-overlay" id="playerOverlay">
+            <p id="overlayMessage">Select a channel to start watching</p>
+          </div>
+        </div>
+
+        <div class="now-playing">
+          <div class="now-playing-info">
+            <img id="activeLogo" class="channel-logo hidden" alt="" />
+            <div>
+              <div class="now-title-row">
+                <h2 id="activeTitle">No channel selected</h2>
+                <span class="badge hidden" id="activeFormat"></span>
+                <span class="badge badge-drm hidden" id="activeDrm">ClearKey</span>
+              </div>
+              <p class="now-sub" id="activeGroup">Automatic playlist sync active</p>
+            </div>
+          </div>
+
+          <div class="now-actions">
+            <label class="toggle" title="Route stream requests through local proxy for CORS and custom headers">
+              <input type="checkbox" id="proxyToggle" checked />
+              <span>Proxy</span>
+            </label>
+            <button type="button" id="retryBtn" class="btn-subtle hidden">Retry</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="sidebar-filters">
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="Search channels… (/)"
+            autocomplete="off"
+            aria-label="Search channels"
+          />
+          <select id="groupFilter" aria-label="Filter by group">
+            <option value="">All groups</option>
+          </select>
+        </div>
+
+        <div class="playlist-meta" id="playlistMeta">
+          <span>Source: himelop.short.gy</span>
+        </div>
+
+        <ul class="channel-list" id="channelList" role="listbox" aria-label="Channels"></ul>
+      </aside>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "minimal-m3u-player",
+  "version": "1.0.0",
+  "description": "Minimal M3U/M3U8/MPD web player with automatic playlist refresh",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
