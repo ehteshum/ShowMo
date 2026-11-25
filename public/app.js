@@ -69,12 +69,13 @@
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
-  function buildStreamUrl(targetUrl, headers) {
+  function buildStreamUrl(targetUrl, headers, rewrite = false) {
     if (!state.useProxy) return targetUrl;
     if (targetUrl.startsWith(`${location.origin}/api/proxy`)) return targetUrl;
     const params = new URLSearchParams({ url: targetUrl });
     const encoded = encodeHeadersParam(headers);
     if (encoded) params.set('h', encoded);
+    if (rewrite) params.set('rewrite', '1');
     return `/api/proxy?${params.toString()}`;
   }
 
@@ -400,7 +401,9 @@
 
     setOverlay(overlayText || `Loading ${channel.name}…`);
     stopPlaybackWatchdog();
-    await teardownPlayers();
+    if (state.hls || state.shaka || els.video.getAttribute('src')) {
+      await teardownPlayers();
+    }
 
     try {
       if (channel.format === 'DASH' || channel.clearKeys) {
@@ -451,13 +454,23 @@
     }
   }
 
+  function isIosDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
   async function playWithShaka(channel) {
+    if (isIosDevice() && channel.clearKeys) {
+      throw new Error('iPhone Safari does not support ClearKey DASH (.mpd) streams. Try an HLS channel instead.');
+    }
     if (!window.shaka) {
       throw new Error('Shaka Player library failed to load');
     }
     window.shaka.polyfill.installAll();
     if (!window.shaka.Player.isBrowserSupported()) {
-      throw new Error('Browser does not support DASH playback');
+      throw new Error(isIosDevice()
+        ? 'iPhone Safari does not support DASH (.mpd) streams. Try an HLS channel instead.'
+        : 'Browser does not support DASH playback');
     }
 
     const player = new window.shaka.Player();
@@ -545,7 +558,7 @@
         return;
       }
 
-      els.video.src = buildStreamUrl(channel.url, channel.headers);
+      els.video.src = buildStreamUrl(channel.url, channel.headers, true);
       els.video.onloadedmetadata = () => resolve();
       els.video.onerror = () => reject(new Error('Stream could not be played'));
     });

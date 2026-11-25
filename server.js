@@ -233,6 +233,53 @@ function isManifestResponse(targetUrl, contentType = '') {
   return /\.(m3u8?|mpd)(\?|$)/i.test(targetUrl);
 }
 
+function isHlsPlaylist(targetUrl, contentType = '', text = '') {
+  const lowerCt = contentType.toLowerCase();
+  if (lowerCt.includes('mpegurl')) return true;
+  if (/\.m3u8?(\?|$)/i.test(targetUrl)) return true;
+  return text.trimStart().startsWith('#EXTM3U');
+}
+
+function makeProxyHref(targetUrl, encodedHeaders) {
+  const params = new URLSearchParams({ url: targetUrl, rewrite: '1' });
+  if (encodedHeaders) params.set('h', encodedHeaders);
+  return `/api/proxy?${params.toString()}`;
+}
+
+function rewriteM3u8Manifest(manifestText, baseUrl, encodedHeaders) {
+  return manifestText
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      if (trimmed.startsWith('#')) {
+        return line.replace(/URI="([^"]+)"/gi, (_match, rawUri) => {
+          try {
+            const abs = new URL(rawUri, baseUrl).toString();
+            if (/^https?:\/\//i.test(abs)) {
+              allowedStreamHosts.add(new URL(abs).hostname.toLowerCase());
+              return `URI="${makeProxyHref(abs, encodedHeaders)}"`;
+            }
+          } catch {
+            // Keep original URI if invalid
+          }
+          return `URI="${rawUri}"`;
+        });
+      }
+      try {
+        const abs = new URL(trimmed, baseUrl).toString();
+        if (/^https?:\/\//i.test(abs)) {
+          allowedStreamHosts.add(new URL(abs).hostname.toLowerCase());
+          return makeProxyHref(abs, encodedHeaders);
+        }
+      } catch {
+        // Keep original line if invalid
+      }
+      return line;
+    })
+    .join('\n');
+}
+
 async function handleProxyApi(req, reqUrl, res) {
   const target = reqUrl.searchParams.get('url');
   if (!target) {
@@ -254,13 +301,15 @@ async function handleProxyApi(req, reqUrl, res) {
     return;
   }
 
-  const customHeaders = parseEncodedHeaders(reqUrl.searchParams.get('h'));
+  const encodedHeaders = reqUrl.searchParams.get('h') || '';
+  const customHeaders = parseEncodedHeaders(encodedHeaders);
   if (req.headers.range) {
     customHeaders.Range = req.headers.range;
   }
+  const shouldRewrite = reqUrl.searchParams.get('rewrite') === '1';
 
   try {
-    const { upstreamRes } = await requestWithRedirects(target, customHeaders, 6, true);
+    const { upstreamRes, finalUrl } = await requestWithRedirects(target, customHeaders, 6, true);
     setCorsHeaders(res);
 
     const passHeaders = {};
@@ -273,9 +322,12 @@ async function handleProxyApi(req, reqUrl, res) {
       passHeaders['cache-control'] = 'no-store';
     }
 
-    if (!upstreamRes.headers['content-encoding'] && isManifestResponse(target, passHeaders['content-type'])) {
-      const manifestText = await readStreamText(upstreamRes);
+    if (!upstreamRes.headers['content-encoding'] && isManifestResponse(finalUrl, passHeaders['content-type'])) {
+      let manifestText = await readStreamText(upstreamRes);
       registerHostsFromText(manifestText);
+      if (shouldRewrite && isHlsPlaylist(finalUrl, passHeaders['content-type'], manifestText)) {
+        manifestText = rewriteM3u8Manifest(manifestText, finalUrl, encodedHeaders);
+      }
       delete passHeaders['content-length'];
       res.writeHead(upstreamRes.statusCode || 200, passHeaders);
       res.end(manifestText);
