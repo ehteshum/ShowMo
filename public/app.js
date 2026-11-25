@@ -45,6 +45,8 @@
     selectedCategory: null,
     useProxy: false,
     proxyOverrides: new Map(),
+    serverProxyUrls: new Set(),
+    fallbackStage: 'initial',
     isFetching: false,
     isRecovering: false,
     hasPlayed: false,
@@ -90,7 +92,7 @@
     if (encoded) params.set('h', encoded);
     if (rewrite) params.set('rewrite', '1');
 
-    if (state.workerProxyUrl && !isIpHost(targetUrl)) {
+    if (!state.serverProxyUrls.has(state.activeChannel?.url || '') && state.workerProxyUrl && !isIpHost(targetUrl)) {
       return `${state.workerProxyUrl}/?${params.toString()}`;
     }
     return `/api/proxy?${params.toString()}`;
@@ -402,10 +404,38 @@
     };
   }
 
-  async function playChannel(channel, { overlayText, allowProxyFallback = true } = {}) {
+  function handleInitialStreamFailure(channel, errorMessage) {
+    if (!state.activeChannel || state.activeChannel.url !== channel.url || state.hasPlayed) {
+      return false;
+    }
+
+    const canUseWorker = Boolean(state.workerProxyUrl && !isIpHost(channel.url));
+    if (state.fallbackStage === 'initial' && state.useProxy && /^https:\/\//i.test(channel.url)) {
+      state.proxyOverrides.set(channel.url, false);
+      playChannel(channel, { overlayText: 'Trying direct connection…', fallbackStage: 'direct' });
+      return true;
+    }
+
+    if (
+      (state.fallbackStage === 'direct' || (state.fallbackStage === 'initial' && state.useProxy)) &&
+      canUseWorker &&
+      !state.serverProxyUrls.has(channel.url)
+    ) {
+      state.serverProxyUrls.add(channel.url);
+      state.proxyOverrides.set(channel.url, true);
+      playChannel(channel, { overlayText: 'Trying server proxy…', fallbackStage: 'server' });
+      return true;
+    }
+
+    setOverlay(`Playback failed: ${errorMessage || 'Unable to load stream'}`, true);
+    return false;
+  }
+
+  async function playChannel(channel, { overlayText, fallbackStage = 'initial' } = {}) {
     if (!channel) return;
     const isSameChannel = state.activeChannel?.url === channel.url;
     state.activeChannel = channel;
+    state.fallbackStage = fallbackStage;
     state.useProxy = resolveProxyForChannel(channel);
     els.proxyToggle.checked = state.useProxy;
     if (!isSameChannel) {
@@ -437,20 +467,10 @@
         // Autoplay with sound may be blocked by browser policy; controls are visible
       });
     } catch (err) {
-      if (
-        allowProxyFallback &&
-        !state.hasPlayed &&
-        state.useProxy &&
-        !state.proxyOverrides.has(channel.url) &&
-        /^https:\/\//i.test(channel.url)
-      ) {
-        state.proxyOverrides.set(channel.url, false);
-        return playChannel(channel, { overlayText: 'Trying direct connection…', allowProxyFallback: false });
-      }
       if (state.hasPlayed && navigator.onLine) {
         scheduleReconnect(`Playback interrupted (${err.message || 'retrying'})…`);
       } else {
-        setOverlay(`Playback failed: ${err.message || 'Unable to load stream'}`, true);
+        handleInitialStreamFailure(channel, err.message);
       }
     }
   }
@@ -578,7 +598,7 @@
             } else if (state.hasPlayed) {
               scheduleReconnect('Stream interrupted — reconnecting…');
             } else {
-              setOverlay(`Stream error (${data.details || 'fatal'})`, true);
+              handleInitialStreamFailure(channel, `Stream error (${data.details || 'fatal'})`);
             }
           }
         });
