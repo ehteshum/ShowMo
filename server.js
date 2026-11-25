@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const DEFAULT_PLAYLIST_URL = 'https://himelop.short.gy/playlist.m3u';
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const WORKER_PROXY_URL = (process.env.WORKER_PROXY_URL || '').trim().replace(/\/+$/, '');
 
 const allowedStreamHosts = new Set();
 
@@ -204,6 +205,7 @@ async function handlePlaylistApi(_reqUrl, res) {
       playlist: text,
       sourceUrl: finalUrl,
       etag: upstreamRes.headers.etag || null,
+      workerProxyUrl: WORKER_PROXY_URL,
       fetchedAt: new Date().toISOString(),
     });
   } catch (err) {

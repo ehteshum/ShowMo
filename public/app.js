@@ -42,6 +42,7 @@
   const state = {
     channels: [],
     rawPlaylist: '',
+    workerProxyUrl: localStorage.getItem('showmo_worker_proxy_url') || '',
     lastSyncedAt: null,
     activeChannel: null,
     selectedCategory: null,
@@ -70,20 +71,36 @@
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
+  function isIpHost(targetUrl) {
+    try {
+      const host = new URL(targetUrl).hostname.replace(/^\[|\]$/g, '');
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+    } catch {
+      return false;
+    }
+  }
+
   function buildStreamUrl(targetUrl, headers, rewrite = false) {
     if (!state.useProxy) return targetUrl;
     if (targetUrl.startsWith(`${location.origin}/api/proxy`)) return targetUrl;
+    if (state.workerProxyUrl && targetUrl.startsWith(state.workerProxyUrl)) return targetUrl;
+
     const params = new URLSearchParams({ url: targetUrl });
     const encoded = encodeHeadersParam(headers);
     if (encoded) params.set('h', encoded);
     if (rewrite) params.set('rewrite', '1');
+
+    if (state.workerProxyUrl && !isIpHost(targetUrl)) {
+      return `${state.workerProxyUrl}/?${params.toString()}`;
+    }
     return `/api/proxy?${params.toString()}`;
   }
 
   function unwrapProxyUrl(maybeProxyUrl) {
     try {
       const parsed = new URL(maybeProxyUrl, location.origin);
-      if (parsed.pathname === '/api/proxy') {
+      const workerOrigin = state.workerProxyUrl ? new URL(state.workerProxyUrl).origin : '';
+      if (parsed.pathname === '/api/proxy' || (workerOrigin && parsed.origin === workerOrigin)) {
         return parsed.searchParams.get('url') || maybeProxyUrl;
       }
     } catch {
@@ -857,6 +874,9 @@
       const res = await fetch(`/api/playlist?t=${Date.now()}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
+        if (typeof data.workerProxyUrl === 'string' && data.workerProxyUrl) {
+          state.workerProxyUrl = data.workerProxyUrl.replace(/\/+$/, '');
+        }
         if (typeof data.playlist === 'string') return data.playlist;
       }
     } catch {

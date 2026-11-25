@@ -1,0 +1,8 @@
+name = "showmo-proxy"
+main = "worker.js"
+compatibility_date = "2026-11-25"
+
+[vars]
+# Optional: restrict browser access to your Render domain (e.g. "https://showmo.onrender.com")
+# Leave "*" while testing, or comma-separate allowed origins.
+ALLOWED_ORIGIN = "*"
