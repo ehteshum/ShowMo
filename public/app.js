@@ -3,6 +3,8 @@
 
   const PLAYLIST_URL = 'https://himelop.short.gy/playlist.m3u';
   const AUTO_REFRESH_MS = 30000;
+  const STALL_THRESHOLD_SEC = 8;
+  const RECONNECT_DELAY_MS = 2500;
   const ALL_CHANNELS_CATEGORY = 'All Channels';
   const STORAGE_KEYS = {
     useProxy: 'showmo_use_proxy',
@@ -42,6 +44,12 @@
     selectedCategory: null,
     useProxy: loadBool(STORAGE_KEYS.useProxy, false),
     isFetching: false,
+    isRecovering: false,
+    hasPlayed: false,
+    lastPlaybackTime: -1,
+    stalledSeconds: 0,
+    watchdogTimer: null,
+    reconnectTimer: null,
     hls: null,
     shaka: null,
   };
@@ -269,7 +277,77 @@
     els.retryBtn.classList.toggle('hidden', !showRetry);
   }
 
+  function clearReconnectTimer() {
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  }
+
+  function stopPlaybackWatchdog() {
+    if (state.watchdogTimer) {
+      clearInterval(state.watchdogTimer);
+      state.watchdogTimer = null;
+    }
+    state.stalledSeconds = 0;
+    state.lastPlaybackTime = -1;
+  }
+
+  function startPlaybackWatchdog() {
+    stopPlaybackWatchdog();
+    state.watchdogTimer = setInterval(() => {
+      if (!state.activeChannel || state.isRecovering || !navigator.onLine) return;
+      if (els.video.paused) {
+        state.stalledSeconds = 0;
+        state.lastPlaybackTime = els.video.currentTime;
+        return;
+      }
+
+      const currentTime = els.video.currentTime;
+      const isAdvancing = state.lastPlaybackTime >= 0 && Math.abs(currentTime - state.lastPlaybackTime) >= 0.05;
+      const isBuffering = els.video.readyState <= 2 || els.video.playbackRate === 0;
+
+      if (!isAdvancing || isBuffering) {
+        state.stalledSeconds += 1;
+        if (state.stalledSeconds >= STALL_THRESHOLD_SEC) {
+          recoverActiveChannel('Stream lagged — refreshing live…');
+        }
+      } else {
+        state.stalledSeconds = 0;
+        state.hasPlayed = true;
+      }
+
+      state.lastPlaybackTime = currentTime;
+    }, 1000);
+  }
+
+  function scheduleReconnect(reason = 'Connection interrupted — reconnecting…') {
+    if (!state.activeChannel || state.reconnectTimer) return;
+    setOverlay(reason, true);
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null;
+      recoverActiveChannel('Reconnecting to live…');
+    }, RECONNECT_DELAY_MS);
+  }
+
+  async function recoverActiveChannel(reason = 'Reconnecting to live…') {
+    if (!state.activeChannel || state.isRecovering) return;
+    if (!navigator.onLine) {
+      setOverlay('Waiting for internet connection…', true);
+      return;
+    }
+    state.isRecovering = true;
+    state.stalledSeconds = 0;
+    clearReconnectTimer();
+    try {
+      await playChannel(state.activeChannel, { overlayText: reason });
+    } finally {
+      state.isRecovering = false;
+    }
+  }
+
   async function teardownPlayers() {
+    clearReconnectTimer();
     if (state.hls) {
       state.hls.destroy();
       state.hls = null;
@@ -303,9 +381,13 @@
     };
   }
 
-  async function playChannel(channel) {
+  async function playChannel(channel, { overlayText } = {}) {
     if (!channel) return;
+    const isSameChannel = state.activeChannel?.url === channel.url;
     state.activeChannel = channel;
+    if (!isSameChannel) {
+      state.hasPlayed = false;
+    }
     if (state.selectedCategory !== ALL_CHANNELS_CATEGORY) {
       state.selectedCategory = channel.group;
     }
@@ -314,7 +396,8 @@
     updateNowPlayingUI(channel);
     render();
 
-    setOverlay(`Loading ${channel.name}…`);
+    setOverlay(overlayText || `Loading ${channel.name}…`);
+    stopPlaybackWatchdog();
     await teardownPlayers();
 
     try {
@@ -324,17 +407,25 @@
         await playWithHlsOrNative(channel);
       }
       setOverlay('');
+      startPlaybackWatchdog();
       els.video.play().catch(() => {
         // Autoplay with sound may be blocked by browser policy; controls are visible
       });
     } catch (err) {
-      setOverlay(`Playback failed: ${err.message || 'Unable to load stream'}`, true);
+      if (state.hasPlayed && navigator.onLine) {
+        scheduleReconnect(`Playback interrupted (${err.message || 'retrying'})…`);
+      } else {
+        setOverlay(`Playback failed: ${err.message || 'Unable to load stream'}`, true);
+      }
     }
   }
 
   async function returnToCategoriesView() {
     state.activeChannel = null;
     state.selectedCategory = null;
+    state.hasPlayed = false;
+    state.isRecovering = false;
+    stopPlaybackWatchdog();
     els.browseSearch.value = '';
     els.searchInput.value = '';
     await teardownPlayers();
@@ -359,7 +450,11 @@
 
     player.addEventListener('error', (event) => {
       const detail = event.detail;
-      setOverlay(`Stream error (${detail?.code || 'unknown'})`, true);
+      if (state.hasPlayed) {
+        scheduleReconnect(`Stream interrupted (${detail?.code || 'retrying'})…`);
+      } else {
+        setOverlay(`Stream error (${detail?.code || 'unknown'})`, true);
+      }
     });
 
     player.configure({
@@ -399,6 +494,9 @@
         const hls = new window.Hls({
           enableWorker: true,
           lowLatencyMode: true,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 6,
+          maxLiveSyncPlaybackRate: 1.5,
           loader: state.useProxy ? createProxiedHlsLoader(channel.headers) : window.Hls.DefaultConfig.loader,
         });
         state.hls = hls;
@@ -418,6 +516,8 @@
               reject(new Error('Stream unreachable or blocked'));
             } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
               hls.recoverMediaError();
+            } else if (state.hasPlayed) {
+              scheduleReconnect('Stream interrupted — reconnecting…');
             } else {
               setOverlay(`Stream error (${data.details || 'fatal'})`, true);
             }
@@ -792,6 +892,17 @@
           syncPlaylist();
         }
       }
+    });
+
+    window.addEventListener('online', () => {
+      if (state.activeChannel) {
+        recoverActiveChannel('Back online — syncing to live…');
+      }
+    });
+
+    els.video.addEventListener('playing', () => {
+      state.hasPlayed = true;
+      state.stalledSeconds = 0;
     });
 
     document.addEventListener('keydown', (e) => {
