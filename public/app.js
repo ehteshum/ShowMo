@@ -6,9 +6,6 @@
   const STALL_THRESHOLD_SEC = 8;
   const RECONNECT_DELAY_MS = 2500;
   const ALL_CHANNELS_CATEGORY = 'All Channels';
-  const STORAGE_KEYS = {
-    useProxy: 'showmo_use_proxy',
-  };
 
   const els = {
     video: document.getElementById('video'),
@@ -46,7 +43,8 @@
     lastSyncedAt: null,
     activeChannel: null,
     selectedCategory: null,
-    useProxy: loadBool(STORAGE_KEYS.useProxy, false),
+    useProxy: false,
+    proxyOverrides: new Map(),
     isFetching: false,
     isRecovering: false,
     hasPlayed: false,
@@ -58,9 +56,11 @@
     shaka: null,
   };
 
-  function loadBool(key, fallback) {
-    const val = localStorage.getItem(key);
-    return val === null ? fallback : val === 'true';
+  function resolveProxyForChannel(channel) {
+    if (state.proxyOverrides.has(channel.url)) {
+      return state.proxyOverrides.get(channel.url);
+    }
+    return channel.format !== 'DASH' && !channel.clearKeys;
   }
 
   function encodeHeadersParam(headers) {
@@ -406,6 +406,8 @@
     if (!channel) return;
     const isSameChannel = state.activeChannel?.url === channel.url;
     state.activeChannel = channel;
+    state.useProxy = resolveProxyForChannel(channel);
+    els.proxyToggle.checked = state.useProxy;
     if (!isSameChannel) {
       state.hasPlayed = false;
     }
@@ -938,8 +940,10 @@
 
     els.proxyToggle.addEventListener('change', () => {
       state.useProxy = els.proxyToggle.checked;
-      localStorage.setItem(STORAGE_KEYS.useProxy, String(state.useProxy));
-      if (state.activeChannel) playChannel(state.activeChannel);
+      if (state.activeChannel) {
+        state.proxyOverrides.set(state.activeChannel.url, state.useProxy);
+        playChannel(state.activeChannel);
+      }
     });
 
     els.retryBtn.addEventListener('click', () => {
