@@ -3,6 +3,7 @@
 
   const PLAYLIST_URL = 'https://himelop.short.gy/playlist.m3u';
   const AUTO_REFRESH_MS = 30000;
+  const ALL_CHANNELS_CATEGORY = 'All Channels';
   const STORAGE_KEYS = {
     useProxy: 'showmo_use_proxy',
   };
@@ -305,7 +306,9 @@
   async function playChannel(channel) {
     if (!channel) return;
     state.activeChannel = channel;
-    state.selectedCategory = channel.group;
+    if (state.selectedCategory !== ALL_CHANNELS_CATEGORY) {
+      state.selectedCategory = channel.group;
+    }
     els.browseView.classList.add('hidden');
     els.playerView.classList.remove('hidden');
     updateNowPlayingUI(channel);
@@ -449,11 +452,26 @@
   }
 
   function getCategories() {
+    if (state.channels.length === 0) return [];
     const counts = new Map();
     for (const ch of state.channels) {
       counts.set(ch.group, (counts.get(ch.group) || 0) + 1);
     }
-    return [...counts.entries()].map(([name, count]) => ({ name, count }));
+    return [
+      { name: ALL_CHANNELS_CATEGORY, count: state.channels.length },
+      ...[...counts.entries()].map(([name, count]) => ({ name, count })),
+    ];
+  }
+
+  function getFilteredChannels(query) {
+    const filterByGroup = state.selectedCategory && state.selectedCategory !== ALL_CHANNELS_CATEGORY;
+    return state.channels.filter((ch) => {
+      if (filterByGroup && ch.group !== state.selectedCategory) return false;
+      if (query && !ch.name.toLowerCase().includes(query) && !ch.group.toLowerCase().includes(query)) {
+        return false;
+      }
+      return true;
+    });
   }
 
   function createThumbFallback(name) {
@@ -578,13 +596,7 @@
       return;
     }
 
-    const filtered = state.channels.filter((ch) => {
-      if (state.selectedCategory && ch.group !== state.selectedCategory) return false;
-      if (query && !ch.name.toLowerCase().includes(query) && !ch.group.toLowerCase().includes(query)) {
-        return false;
-      }
-      return true;
-    });
+    const filtered = getFilteredChannels(query);
 
     els.browseChannelList.innerHTML = '';
     if (filtered.length === 0) {
@@ -650,13 +662,7 @@
       return;
     }
 
-    const filtered = state.channels.filter((ch) => {
-      if (state.selectedCategory && ch.group !== state.selectedCategory) return false;
-      if (query && !ch.name.toLowerCase().includes(query) && !ch.group.toLowerCase().includes(query)) {
-        return false;
-      }
-      return true;
-    });
+    const filtered = getFilteredChannels(query);
 
     if (filtered.length === 0) {
       const empty = document.createElement('li');
@@ -674,9 +680,10 @@
   }
 
   function render() {
-    const catCount = getCategories().length;
+    const categories = getCategories();
+    const groupCount = Math.max(0, categories.length - 1);
     els.channelCount.textContent = state.channels.length
-      ? `${catCount} categories • ${state.channels.length} channels`
+      ? `${groupCount} categories • ${state.channels.length} channels`
       : 'Loading…';
 
     if (state.activeChannel) {
