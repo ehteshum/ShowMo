@@ -2,9 +2,9 @@
   'use strict';
 
   const PLAYLIST_URL = 'https://himelop.short.gy/playlist.m3u';
+  const AUTO_REFRESH_MS = 30000;
   const STORAGE_KEYS = {
-    refreshInterval: 'm3u_refresh_interval',
-    useProxy: 'm3u_use_proxy',
+    useProxy: 'showmo_use_proxy',
     lastChannelUrl: 'm3u_last_channel_url',
   };
 
@@ -23,31 +23,19 @@
     channelCount: document.getElementById('channelCount'),
     searchInput: document.getElementById('searchInput'),
     groupFilter: document.getElementById('groupFilter'),
-    playlistMeta: document.getElementById('playlistMeta'),
-    refreshStatus: document.getElementById('refreshStatus'),
-    refreshInterval: document.getElementById('refreshInterval'),
-    refreshBtn: document.getElementById('refreshBtn'),
     syncDot: document.getElementById('syncDot'),
   };
 
   const state = {
     channels: [],
     rawPlaylist: '',
-    playlistUpdatedText: '',
     lastSyncedAt: null,
     activeChannel: null,
-    refreshSeconds: loadNumber(STORAGE_KEYS.refreshInterval, 60),
-    countdown: 60,
-    useProxy: loadBool(STORAGE_KEYS.useProxy, true),
+    useProxy: loadBool(STORAGE_KEYS.useProxy, false),
     isFetching: false,
     hls: null,
     shaka: null,
   };
-
-  function loadNumber(key, fallback) {
-    const val = Number(localStorage.getItem(key));
-    return Number.isFinite(val) && val >= 0 ? val : fallback;
-  }
 
   function loadBool(key, fallback) {
     const val = localStorage.getItem(key);
@@ -553,24 +541,6 @@
     return span;
   }
 
-  function updateMetaDisplay() {
-    const syncTime = state.lastSyncedAt
-      ? state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      : '—';
-    const listStamp = state.playlistUpdatedText ? `List: ${state.playlistUpdatedText}` : 'Source: himelop.short.gy';
-    els.playlistMeta.innerHTML = `<span>${escapeHtml(listStamp)}</span><span>Synced ${escapeHtml(syncTime)}</span>`;
-  }
-
-  function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    }[c]));
-  }
-
   async function fetchPlaylistText() {
     try {
       const res = await fetch(`/api/playlist?t=${Date.now()}`, { cache: 'no-store' });
@@ -589,12 +559,9 @@
     return direct.text();
   }
 
-  async function syncPlaylist({ isManual = false } = {}) {
+  async function syncPlaylist() {
     if (state.isFetching) return;
     state.isFetching = true;
-    els.syncDot.className = 'live-dot syncing';
-    els.refreshBtn.classList.add('spinning');
-    if (isManual) els.refreshStatus.textContent = 'Refreshing…';
 
     try {
       const text = await fetchPlaylistText();
@@ -603,9 +570,8 @@
 
       if (text !== state.rawPlaylist) {
         state.rawPlaylist = text;
-        const { channels, updatedText } = parseM3U(text);
+        const { channels } = parseM3U(text);
         state.channels = channels;
-        state.playlistUpdatedText = updatedText;
 
         populateGroupFilter(channels);
         renderChannelList();
@@ -622,60 +588,24 @@
           }
         }
       }
-
-      updateMetaDisplay();
-      state.countdown = state.refreshSeconds;
-      updateCountdownLabel();
     } catch (err) {
-      els.syncDot.className = 'live-dot err';
-      els.refreshStatus.textContent = `Sync failed (${err.message})`;
       if (state.channels.length === 0) {
+        els.syncDot.className = 'live-dot err';
         setOverlay(`Could not load playlist: ${err.message}`, false);
       }
     } finally {
       state.isFetching = false;
-      els.refreshBtn.classList.remove('spinning');
     }
-  }
-
-  function updateCountdownLabel() {
-    if (state.isFetching) return;
-    if (state.refreshSeconds === 0) {
-      els.refreshStatus.textContent = 'Auto-refresh off';
-      return;
-    }
-    els.refreshStatus.textContent = `Refresh in ${state.countdown}s`;
   }
 
   function startRefreshTimer() {
-    state.countdown = state.refreshSeconds;
-    updateCountdownLabel();
-
     setInterval(() => {
-      if (state.refreshSeconds === 0 || state.isFetching) return;
-      state.countdown -= 1;
-      if (state.countdown <= 0) {
-        syncPlaylist();
-      } else {
-        updateCountdownLabel();
-      }
-    }, 1000);
+      syncPlaylist();
+    }, AUTO_REFRESH_MS);
   }
 
   function bindEvents() {
-    els.refreshInterval.value = String(state.refreshSeconds);
     els.proxyToggle.checked = state.useProxy;
-
-    els.refreshInterval.addEventListener('change', () => {
-      state.refreshSeconds = Number(els.refreshInterval.value);
-      localStorage.setItem(STORAGE_KEYS.refreshInterval, String(state.refreshSeconds));
-      state.countdown = state.refreshSeconds;
-      updateCountdownLabel();
-    });
-
-    els.refreshBtn.addEventListener('click', () => {
-      syncPlaylist({ isManual: true });
-    });
 
     els.proxyToggle.addEventListener('change', () => {
       state.useProxy = els.proxyToggle.checked;
@@ -691,9 +621,8 @@
     els.groupFilter.addEventListener('change', renderChannelList);
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && state.refreshSeconds > 0 && state.lastSyncedAt) {
-        const elapsedSec = (Date.now() - state.lastSyncedAt.getTime()) / 1000;
-        if (elapsedSec >= Math.max(15, state.refreshSeconds / 2)) {
+      if (document.visibilityState === 'visible' && state.lastSyncedAt) {
+        if (Date.now() - state.lastSyncedAt.getTime() >= AUTO_REFRESH_MS) {
           syncPlaylist();
         }
       }

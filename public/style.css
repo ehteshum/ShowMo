@@ -1,11 +1,11 @@
 :root {
-  --bg: #0b0d10;
-  --surface: #12161c;
-  --surface-hover: #191f28;
-  --surface-active: #1d2633;
-  --border: #222933;
-  --text: #e6ebf2;
-  --muted: #8b95a5;
+  --bg: #000000;
+  --surface: #050507;
+  --surface-hover: #0e0e12;
+  --surface-active: #121722;
+  --border: #1a1a20;
+  --text: #f3f4f6;
+  --muted: #71717a;
   --accent: #38bdf8;
   --accent-soft: rgba(56, 189, 248, 0.14);
   --ok: #22c55e;
@@ -58,11 +58,24 @@ body {
   gap: 10px;
 }
 
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
 .brand h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.1;
   letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.2;
+  margin-top: 2px;
 }
 
 .live-dot {
@@ -202,7 +215,7 @@ video {
   justify-content: center;
   padding: 20px;
   text-align: center;
-  background: rgba(11, 13, 16, 0.72);
+  background: rgba(0, 0, 0, 0.82);
   pointer-events: none;
 }
 
