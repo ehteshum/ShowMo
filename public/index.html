@@ -40,7 +40,14 @@
         />
       </div>
 
-      <div class="category-grid" id="categoryGrid"></div>
+      <div class="category-grid" id="categoryGrid">
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+        <div class="skeleton-card" aria-hidden="true"><span class="skeleton-line wide"></span><span class="skeleton-line short"></span></div>
+      </div>
       <ul class="browse-channel-list hidden" id="browseChannelList" role="listbox" aria-label="Channels"></ul>
     </section>
 
@@ -59,6 +66,7 @@
             <div>
               <div class="now-title-row">
                 <h2 id="activeTitle">No channel selected</h2>
+                <span class="badge badge-live hidden" id="activeLivePill"><span class="live-pulse"></span>LIVE</span>
                 <span class="badge hidden" id="activeFormat"></span>
                 <span class="badge badge-drm hidden" id="activeDrm">ClearKey</span>
               </div>

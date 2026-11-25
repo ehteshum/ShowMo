@@ -16,6 +16,7 @@
     overlayMessage: document.getElementById('overlayMessage'),
     activeLogo: document.getElementById('activeLogo'),
     activeTitle: document.getElementById('activeTitle'),
+    activeLivePill: document.getElementById('activeLivePill'),
     activeGroup: document.getElementById('activeGroup'),
     activeFormat: document.getElementById('activeFormat'),
     activeDrm: document.getElementById('activeDrm'),
@@ -567,6 +568,7 @@
   function updateNowPlayingUI(channel) {
     els.activeTitle.textContent = channel.name;
     els.activeGroup.textContent = `${channel.group} • Channel #${channel.chno}`;
+    els.activeLivePill.classList.remove('hidden');
     els.activeFormat.textContent = channel.format;
     els.activeFormat.classList.remove('hidden');
     els.activeDrm.classList.toggle('hidden', !channel.clearKeys);
@@ -648,11 +650,26 @@
     name.className = 'channel-name';
     name.textContent = ch.name;
 
-    const sub = document.createElement('span');
-    sub.className = 'channel-sub';
-    sub.textContent = `${ch.group} • ${ch.format}${ch.clearKeys ? ' • ClearKey' : ''}`;
+    const subRow = document.createElement('span');
+    subRow.className = 'channel-sub-row';
 
-    meta.append(name, sub);
+    const groupLabel = document.createElement('span');
+    groupLabel.className = 'channel-group-label';
+    groupLabel.textContent = ch.group;
+
+    const formatPill = document.createElement('span');
+    formatPill.className = 'micro-pill';
+    formatPill.textContent = ch.format;
+
+    subRow.append(groupLabel, formatPill);
+    if (ch.clearKeys) {
+      const drmPill = document.createElement('span');
+      drmPill.className = 'micro-pill micro-pill-drm';
+      drmPill.textContent = 'ClearKey';
+      subRow.appendChild(drmPill);
+    }
+
+    meta.append(name, subRow);
     btn.append(num, thumb, meta);
     btn.addEventListener('click', () => playChannel(ch));
     li.appendChild(btn);
@@ -707,10 +724,15 @@
     if (!showingChannels) {
       els.categoryGrid.innerHTML = '';
       if (categories.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'channel-empty';
-        empty.textContent = 'Loading categories…';
-        els.categoryGrid.appendChild(empty);
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < 8; i++) {
+          const card = document.createElement('div');
+          card.className = 'skeleton-card';
+          card.setAttribute('aria-hidden', 'true');
+          card.innerHTML = '<span class="skeleton-line wide"></span><span class="skeleton-line short"></span>';
+          frag.appendChild(card);
+        }
+        els.categoryGrid.appendChild(frag);
         return;
       }
 
@@ -770,15 +792,20 @@
         name.className = 'channel-name';
         name.textContent = cat.name;
 
+        const subRow = document.createElement('span');
+        subRow.className = 'channel-sub-row';
+
         const sub = document.createElement('span');
-        sub.className = 'channel-sub';
+        sub.className = 'channel-group-label';
         sub.textContent = `${cat.count} ${cat.count === 1 ? 'channel' : 'channels'}`;
+
+        subRow.appendChild(sub);
 
         const chevron = document.createElement('span');
         chevron.className = 'category-chevron';
         chevron.textContent = '›';
 
-        meta.append(name, sub);
+        meta.append(name, subRow);
         btn.append(meta, chevron);
         btn.addEventListener('click', () => {
           state.selectedCategory = cat.name;
