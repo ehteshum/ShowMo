@@ -402,7 +402,7 @@
     };
   }
 
-  async function playChannel(channel, { overlayText } = {}) {
+  async function playChannel(channel, { overlayText, allowProxyFallback = true } = {}) {
     if (!channel) return;
     const isSameChannel = state.activeChannel?.url === channel.url;
     state.activeChannel = channel;
@@ -437,6 +437,16 @@
         // Autoplay with sound may be blocked by browser policy; controls are visible
       });
     } catch (err) {
+      if (
+        allowProxyFallback &&
+        !state.hasPlayed &&
+        state.useProxy &&
+        !state.proxyOverrides.has(channel.url) &&
+        /^https:\/\//i.test(channel.url)
+      ) {
+        state.proxyOverrides.set(channel.url, false);
+        return playChannel(channel, { overlayText: 'Trying direct connection…', allowProxyFallback: false });
+      }
       if (state.hasPlayed && navigator.onLine) {
         scheduleReconnect(`Playback interrupted (${err.message || 'retrying'})…`);
       } else {

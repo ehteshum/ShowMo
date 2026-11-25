@@ -204,7 +204,10 @@ export default {
       }
 
       const contentLength = upstreamRes.headers.get('content-length');
-      if (contentLength) outHeaders.set('content-length', contentLength);
+      const hasEncoding = upstreamRes.headers.has('content-encoding');
+      if (contentLength && !hasEncoding) {
+        outHeaders.set('content-length', contentLength);
+      }
 
       return new Response(upstreamRes.body, {
         status: upstreamRes.status,

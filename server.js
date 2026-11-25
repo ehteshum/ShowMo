@@ -315,7 +315,7 @@ async function handleProxyApi(req, reqUrl, res) {
     setCorsHeaders(res);
 
     const passHeaders = {};
-    for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+    for (const name of ['content-type', 'content-length', 'content-encoding', 'content-range', 'accept-ranges', 'cache-control']) {
       if (upstreamRes.headers[name]) {
         passHeaders[name] = upstreamRes.headers[name];
       }
