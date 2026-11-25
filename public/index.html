@@ -17,16 +17,35 @@
           <h1>ShowMo</h1>
           <span class="brand-sub">by ishmam</span>
         </div>
-        <span class="meta-pill" id="channelCount">0 channels</span>
+        <span class="meta-pill" id="channelCount">Loading…</span>
       </div>
     </header>
 
-    <main class="workspace">
+    <section class="browse-view" id="browseView">
+      <div class="browse-header">
+        <div class="browse-title-group">
+          <button type="button" id="browseBackBtn" class="btn-subtle hidden">← Categories</button>
+          <h2 id="browseTitle">Categories</h2>
+        </div>
+        <input
+          type="search"
+          id="browseSearch"
+          placeholder="Search categories or channels… (/)"
+          autocomplete="off"
+          aria-label="Search categories or channels"
+        />
+      </div>
+
+      <div class="category-grid" id="categoryGrid"></div>
+      <ul class="browse-channel-list hidden" id="browseChannelList" role="listbox" aria-label="Channels"></ul>
+    </section>
+
+    <main class="workspace hidden" id="playerView">
       <section class="player-pane">
         <div class="video-frame">
           <video id="video" controls playsinline autoplay></video>
-          <div class="player-overlay" id="playerOverlay">
-            <p id="overlayMessage">Select a channel to start watching</p>
+          <div class="player-overlay hidden" id="playerOverlay">
+            <p id="overlayMessage"></p>
           </div>
         </div>
 
@@ -39,7 +58,7 @@
                 <span class="badge hidden" id="activeFormat"></span>
                 <span class="badge badge-drm hidden" id="activeDrm">ClearKey</span>
               </div>
-              <p class="now-sub" id="activeGroup">Ready to stream</p>
+              <p class="now-sub" id="activeGroup"></p>
             </div>
           </div>
 
@@ -49,12 +68,14 @@
               <span>Proxy</span>
             </label>
             <button type="button" id="retryBtn" class="btn-subtle hidden">Retry</button>
+            <button type="button" id="backToCategoriesBtn" class="btn-subtle">Categories</button>
           </div>
         </div>
       </section>
 
       <aside class="sidebar">
         <div class="sidebar-filters">
+          <button type="button" id="sidebarBackBtn" class="btn-subtle hidden">← Categories</button>
           <input
             type="search"
             id="searchInput"
@@ -62,9 +83,6 @@
             autocomplete="off"
             aria-label="Search channels"
           />
-          <select id="groupFilter" aria-label="Filter by group">
-            <option value="">All groups</option>
-          </select>
         </div>
 
         <ul class="channel-list" id="channelList" role="listbox" aria-label="Channels"></ul>
