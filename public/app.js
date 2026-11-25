@@ -22,6 +22,8 @@
     proxyToggle: document.getElementById('proxyToggle'),
     retryBtn: document.getElementById('retryBtn'),
     backToCategoriesBtn: document.getElementById('backToCategoriesBtn'),
+    homeBrandLink: document.getElementById('homeBrandLink'),
+    topBackBtn: document.getElementById('topBackBtn'),
     browseView: document.getElementById('browseView'),
     browseBackBtn: document.getElementById('browseBackBtn'),
     browseTitle: document.getElementById('browseTitle'),
@@ -420,9 +422,11 @@
     }
   }
 
-  async function returnToCategoriesView() {
+  async function returnToCategoriesView({ keepCategory = false } = {}) {
     state.activeChannel = null;
-    state.selectedCategory = null;
+    if (!keepCategory) {
+      state.selectedCategory = null;
+    }
     state.hasPlayed = false;
     state.isRecovering = false;
     stopPlaybackWatchdog();
@@ -433,6 +437,18 @@
     els.playerView.classList.add('hidden');
     els.browseView.classList.remove('hidden');
     render();
+  }
+
+  function handleBackNavigation() {
+    if (state.activeChannel) {
+      returnToCategoriesView({ keepCategory: true });
+      return;
+    }
+    if (state.selectedCategory) {
+      state.selectedCategory = null;
+      els.browseSearch.value = '';
+      render();
+    }
   }
 
   async function playWithShaka(channel) {
@@ -786,6 +802,9 @@
       ? `${groupCount} categories • ${state.channels.length} channels`
       : 'Loading…';
 
+    const canGoBack = Boolean(state.activeChannel || state.selectedCategory);
+    els.topBackBtn.classList.toggle('hidden', !canGoBack);
+
     if (state.activeChannel) {
       renderSidebar();
     } else {
@@ -870,13 +889,22 @@
     els.browseBackBtn.addEventListener('click', () => {
       state.selectedCategory = null;
       els.browseSearch.value = '';
-      renderBrowseView();
+      render();
     });
 
     els.sidebarBackBtn.addEventListener('click', () => {
       state.selectedCategory = null;
       els.searchInput.value = '';
       renderSidebar();
+    });
+
+    els.homeBrandLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      returnToCategoriesView();
+    });
+
+    els.topBackBtn.addEventListener('click', () => {
+      handleBackNavigation();
     });
 
     els.backToCategoriesBtn.addEventListener('click', () => {
