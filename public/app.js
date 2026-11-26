@@ -20,6 +20,8 @@
     activeDrm: document.getElementById('activeDrm'),
     proxyToggle: document.getElementById('proxyToggle'),
     retryBtn: document.getElementById('retryBtn'),
+    shareBtn: document.getElementById('shareBtn'),
+    shareBtnLabel: document.getElementById('shareBtnLabel'),
     backToCategoriesBtn: document.getElementById('backToCategoriesBtn'),
     homeBrandLink: document.getElementById('homeBrandLink'),
     topBackBtn: document.getElementById('topBackBtn'),
@@ -48,6 +50,8 @@
     proxyOverrides: new Map(),
     serverProxyUrls: new Set(),
     fallbackStage: 'initial',
+    pendingShareKey: new URLSearchParams(location.search).get('ch')?.trim() || '',
+    shareFeedbackTimer: null,
     isFetching: false,
     isRecovering: false,
     hasPlayed: false,
@@ -159,9 +163,39 @@
     return Array.from(bin, (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
   }
 
+  function slugifyChannelName(name) {
+    const clean = (name || '')
+      .replace(/&amp;/gi, 'and')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return clean || 'channel';
+  }
+
+  function findChannelByShareKey(rawKey) {
+    const key = (rawKey || '').trim();
+    if (!key) return null;
+    const lower = key.toLowerCase();
+    return (
+      state.channels.find((ch) => ch.shareKey === lower) ||
+      state.channels.find((ch) => ch.name.toLowerCase() === lower) ||
+      state.channels.find((ch) => ch.chno === key) ||
+      state.channels.find((ch) => ch.url === key) ||
+      null
+    );
+  }
+
+  function getChannelShareUrl(channel) {
+    const key = channel?.shareKey || '';
+    return `${location.origin}${location.pathname}?ch=${encodeURIComponent(key)}`;
+  }
+
   function parseM3U(content) {
     const lines = content.split(/\r?\n/);
     const channels = [];
+    const usedSlugs = new Map();
     let pending = createEmptyMeta();
 
     for (const rawLine of lines) {
@@ -251,10 +285,16 @@
         if (!HIDDEN_CATEGORIES.has(group.toLowerCase())) {
           const isMpd = pending.manifestType === 'mpd' || /\.mpd(\?|$)/i.test(cleanUrl);
           const format = isMpd ? 'DASH' : /\.m3u8(\?|$)/i.test(cleanUrl) ? 'HLS' : 'STREAM';
+          const channelName = pending.name || `Channel ${channels.length + 1}`;
+          const baseSlug = slugifyChannelName(channelName);
+          const seenCount = (usedSlugs.get(baseSlug) || 0) + 1;
+          usedSlugs.set(baseSlug, seenCount);
+          const shareKey = seenCount === 1 ? baseSlug : `${baseSlug}-${seenCount}`;
           channels.push({
             id: `${channels.length + 1}`,
             chno: pending.chno || String(channels.length + 1),
-            name: pending.name || `Channel ${channels.length + 1}`,
+            name: channelName,
+            shareKey,
             logo: pending.logo,
             group,
             url: cleanUrl,
@@ -435,13 +475,66 @@
     return false;
   }
 
-  function pushNavState(view, category = null, channelUrl = null, replace = false) {
-    const nextState = { view, category, channelUrl };
+  function pushNavState(view, category = null, channelUrl = null, replace = false, shareKey = null) {
+    const nextState = { view, category, channelUrl, shareKey };
+    const targetUrl = view === 'player' && shareKey
+      ? `${location.pathname}?ch=${encodeURIComponent(shareKey)}`
+      : location.pathname;
     if (replace) {
-      history.replaceState(nextState, '');
+      history.replaceState(nextState, '', targetUrl);
     } else {
-      history.pushState(nextState, '');
+      history.pushState(nextState, '', targetUrl);
     }
+  }
+
+  function resetShareButtonLabel() {
+    if (state.shareFeedbackTimer) {
+      clearTimeout(state.shareFeedbackTimer);
+      state.shareFeedbackTimer = null;
+    }
+    els.shareBtn.classList.remove('copied');
+    els.shareBtnLabel.textContent = 'Share';
+  }
+
+  async function copyCurrentChannelLink() {
+    if (!state.activeChannel) return;
+    const shareUrl = getChannelShareUrl(state.activeChannel);
+    let copied = false;
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        copied = true;
+      } catch {
+        // Fallback to textarea copy below
+      }
+    }
+
+    if (!copied) {
+      const ta = document.createElement('textarea');
+      ta.value = shareUrl;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        copied = document.execCommand('copy');
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+
+    resetShareButtonLabel();
+    if (copied) {
+      els.shareBtn.classList.add('copied');
+      els.shareBtnLabel.textContent = 'Copied!';
+    } else {
+      els.shareBtnLabel.textContent = 'Unavailable';
+    }
+    state.shareFeedbackTimer = setTimeout(() => {
+      resetShareButtonLabel();
+    }, 1800);
   }
 
   async function playChannel(channel, { overlayText, fallbackStage = 'initial', syncHistory = true } = {}) {
@@ -454,15 +547,16 @@
     els.proxyToggle.checked = state.useProxy;
     if (!isSameChannel) {
       state.hasPlayed = false;
+      resetShareButtonLabel();
     }
     if (state.selectedCategory !== ALL_CHANNELS_CATEGORY) {
       state.selectedCategory = channel.group;
     }
     if (syncHistory && fallbackStage === 'initial') {
       if (!wasPlaying) {
-        pushNavState('player', state.selectedCategory, channel.url, false);
+        pushNavState('player', state.selectedCategory, channel.url, false, channel.shareKey);
       } else if (!isSameChannel) {
-        pushNavState('player', state.selectedCategory, channel.url, true);
+        pushNavState('player', state.selectedCategory, channel.url, true, channel.shareKey);
       }
     }
     els.browseView.classList.add('hidden');
@@ -506,7 +600,6 @@
     stopPlaybackWatchdog();
     els.browseSearch.value = '';
     els.searchInput.value = '';
-    await teardownPlayers();
     setOverlay('');
     els.playerView.classList.add('hidden');
     els.browseView.classList.remove('hidden');
@@ -518,6 +611,7 @@
       }
     }
     render();
+    await teardownPlayers();
   }
 
   function handleBackNavigation() {
@@ -1001,8 +1095,22 @@
         state.rawPlaylist = text;
         state.channels = parseM3U(text);
 
+        if (state.pendingShareKey) {
+          const targetKey = state.pendingShareKey;
+          state.pendingShareKey = '';
+          const sharedChannel = findChannelByShareKey(targetKey);
+          if (sharedChannel) {
+            pushNavState('home', null, null, true);
+            playChannel(sharedChannel);
+            return;
+          }
+          pushNavState('home', null, null, true);
+        }
+
         if (state.activeChannel) {
-          const updatedMatch = state.channels.find((c) => c.url === state.activeChannel.url);
+          const updatedMatch = state.channels.find(
+            (c) => c.url === state.activeChannel.url || c.shareKey === state.activeChannel.shareKey
+          );
           if (updatedMatch) {
             state.activeChannel = updatedMatch;
             updateNowPlayingUI(updatedMatch);
@@ -1032,7 +1140,9 @@
   }
 
   function bindEvents() {
-    pushNavState('home', null, null, true);
+    if (!state.pendingShareKey) {
+      pushNavState('home', null, null, true);
+    }
     els.proxyToggle.checked = state.useProxy;
 
     els.proxyToggle.addEventListener('change', () => {
@@ -1045,6 +1155,10 @@
 
     els.retryBtn.addEventListener('click', () => {
       if (state.activeChannel) playChannel(state.activeChannel, { syncHistory: false });
+    });
+
+    els.shareBtn.addEventListener('click', () => {
+      copyCurrentChannelLink();
     });
 
     els.browseBackBtn.addEventListener('click', () => {
@@ -1086,8 +1200,10 @@
         }
         return;
       }
-      if (nav.view === 'player' && nav.channelUrl) {
-        const ch = state.channels.find((c) => c.url === nav.channelUrl);
+      if (nav.view === 'player' && (nav.channelUrl || nav.shareKey)) {
+        const ch =
+          state.channels.find((c) => c.url === nav.channelUrl) ||
+          findChannelByShareKey(nav.shareKey);
         if (ch) {
           state.selectedCategory = nav.category || ch.group;
           playChannel(ch, { syncHistory: false });

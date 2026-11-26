@@ -156,6 +156,18 @@ input[type="search"]:focus {
   border-color: #2c2c35;
 }
 
+.btn-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-share.copied {
+  color: var(--accent);
+  border-color: rgba(56, 189, 248, 0.45);
+  background: var(--accent-soft);
+}
+
 .browse-view {
   display: flex;
   flex-direction: column;
@@ -707,6 +719,14 @@ video {
 
   .sidebar {
     max-height: 460px;
+  }
+
+  .now-playing {
+    flex-wrap: wrap;
+  }
+
+  .now-actions {
+    flex-wrap: wrap;
   }
 
   .now-title-row h2 {
