@@ -37,6 +37,7 @@
     channelCount: document.getElementById('channelCount'),
     searchInput: document.getElementById('searchInput'),
     syncDot: document.getElementById('syncDot'),
+    toast: document.getElementById('toast'),
   };
 
   const state = {
@@ -52,6 +53,7 @@
     fallbackStage: 'initial',
     pendingShareKey: new URLSearchParams(location.search).get('ch')?.trim() || '',
     shareFeedbackTimer: null,
+    toastTimer: null,
     isFetching: false,
     isRecovering: false,
     hasPlayed: false,
@@ -397,12 +399,28 @@
     }, RECONNECT_DELAY_MS);
   }
 
+  function showToast(message, { accent = false, duration = 2200 } = {}) {
+    if (!els.toast || !message) return;
+    if (state.toastTimer) {
+      clearTimeout(state.toastTimer);
+      state.toastTimer = null;
+    }
+    els.toast.textContent = message;
+    els.toast.classList.toggle('accent', Boolean(accent));
+    els.toast.classList.add('show');
+    state.toastTimer = setTimeout(() => {
+      els.toast.classList.remove('show');
+      state.toastTimer = null;
+    }, duration);
+  }
+
   async function recoverActiveChannel(reason = 'Reconnecting to live…') {
     if (!state.activeChannel || state.isRecovering) return;
     if (!navigator.onLine) {
       setOverlay('Waiting for internet connection…', true);
       return;
     }
+    showToast(reason === 'Reconnecting to live…' ? 'Refreshing live stream…' : reason);
     state.isRecovering = true;
     state.stalledSeconds = 0;
     clearReconnectTimer();
@@ -456,6 +474,7 @@
     const canUseWorker = Boolean(state.workerProxyUrl && !isIpHost(channel.url));
     if (state.fallbackStage === 'initial' && state.useProxy && /^https:\/\//i.test(channel.url)) {
       state.proxyOverrides.set(channel.url, false);
+      showToast('Switched to direct connection');
       playChannel(channel, { overlayText: 'Trying direct connection…', fallbackStage: 'direct', syncHistory: false });
       return true;
     }
@@ -467,6 +486,7 @@
     ) {
       state.serverProxyUrls.add(channel.url);
       state.proxyOverrides.set(channel.url, true);
+      showToast('Switched to server proxy');
       playChannel(channel, { overlayText: 'Trying server proxy…', fallbackStage: 'server', syncHistory: false });
       return true;
     }
@@ -529,8 +549,10 @@
     if (copied) {
       els.shareBtn.classList.add('copied');
       els.shareBtnLabel.textContent = 'Copied!';
+      showToast('Channel link copied', { accent: true });
     } else {
       els.shareBtnLabel.textContent = 'Unavailable';
+      showToast('Could not copy link');
     }
     state.shareFeedbackTimer = setTimeout(() => {
       resetShareButtonLabel();
@@ -1105,6 +1127,7 @@
             return;
           }
           pushNavState('home', null, null, true);
+          showToast('Shared channel is currently unavailable');
         }
 
         if (state.activeChannel) {
@@ -1147,6 +1170,7 @@
 
     els.proxyToggle.addEventListener('change', () => {
       state.useProxy = els.proxyToggle.checked;
+      showToast(state.useProxy ? 'Proxy enabled' : 'Proxy disabled');
       if (state.activeChannel) {
         state.proxyOverrides.set(state.activeChannel.url, state.useProxy);
         playChannel(state.activeChannel, { syncHistory: false });
@@ -1226,7 +1250,7 @@
 
     window.addEventListener('online', () => {
       if (state.activeChannel) {
-        recoverActiveChannel('Back online — syncing to live…');
+        recoverActiveChannel('Back online — syncing to live');
       }
     });
 
