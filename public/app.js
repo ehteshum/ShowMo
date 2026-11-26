@@ -363,7 +363,7 @@
     state.stalledSeconds = 0;
     clearReconnectTimer();
     try {
-      await playChannel(state.activeChannel, { overlayText: reason });
+      await playChannel(state.activeChannel, { overlayText: reason, syncHistory: false });
     } finally {
       state.isRecovering = false;
     }
@@ -412,7 +412,7 @@
     const canUseWorker = Boolean(state.workerProxyUrl && !isIpHost(channel.url));
     if (state.fallbackStage === 'initial' && state.useProxy && /^https:\/\//i.test(channel.url)) {
       state.proxyOverrides.set(channel.url, false);
-      playChannel(channel, { overlayText: 'Trying direct connection…', fallbackStage: 'direct' });
+      playChannel(channel, { overlayText: 'Trying direct connection…', fallbackStage: 'direct', syncHistory: false });
       return true;
     }
 
@@ -423,7 +423,7 @@
     ) {
       state.serverProxyUrls.add(channel.url);
       state.proxyOverrides.set(channel.url, true);
-      playChannel(channel, { overlayText: 'Trying server proxy…', fallbackStage: 'server' });
+      playChannel(channel, { overlayText: 'Trying server proxy…', fallbackStage: 'server', syncHistory: false });
       return true;
     }
 
@@ -431,8 +431,18 @@
     return false;
   }
 
-  async function playChannel(channel, { overlayText, fallbackStage = 'initial' } = {}) {
+  function pushNavState(view, category = null, channelUrl = null, replace = false) {
+    const nextState = { view, category, channelUrl };
+    if (replace) {
+      history.replaceState(nextState, '');
+    } else {
+      history.pushState(nextState, '');
+    }
+  }
+
+  async function playChannel(channel, { overlayText, fallbackStage = 'initial', syncHistory = true } = {}) {
     if (!channel) return;
+    const wasPlaying = Boolean(state.activeChannel);
     const isSameChannel = state.activeChannel?.url === channel.url;
     state.activeChannel = channel;
     state.fallbackStage = fallbackStage;
@@ -443,6 +453,13 @@
     }
     if (state.selectedCategory !== ALL_CHANNELS_CATEGORY) {
       state.selectedCategory = channel.group;
+    }
+    if (syncHistory && fallbackStage === 'initial') {
+      if (!wasPlaying) {
+        pushNavState('player', state.selectedCategory, channel.url, false);
+      } else if (!isSameChannel) {
+        pushNavState('player', state.selectedCategory, channel.url, true);
+      }
     }
     els.browseView.classList.add('hidden');
     els.playerView.classList.remove('hidden');
@@ -475,7 +492,7 @@
     }
   }
 
-  async function returnToCategoriesView({ keepCategory = false } = {}) {
+  async function returnToCategoriesView({ keepCategory = false, syncHistory = true } = {}) {
     state.activeChannel = null;
     if (!keepCategory) {
       state.selectedCategory = null;
@@ -489,10 +506,21 @@
     setOverlay('');
     els.playerView.classList.add('hidden');
     els.browseView.classList.remove('hidden');
+    if (syncHistory) {
+      if (keepCategory && state.selectedCategory) {
+        pushNavState('category', state.selectedCategory, null, false);
+      } else if (history.state?.view !== 'home') {
+        pushNavState('home', null, null, false);
+      }
+    }
     render();
   }
 
   function handleBackNavigation() {
+    if (history.state?.view === 'player' || history.state?.view === 'category') {
+      history.back();
+      return;
+    }
     if (state.activeChannel) {
       returnToCategoriesView({ keepCategory: true });
       return;
@@ -789,6 +817,7 @@
       for (const cat of categories) {
         frag.appendChild(createCategoryCard(cat, (catName) => {
           state.selectedCategory = catName;
+          pushNavState('category', catName, null, false);
           render();
         }));
       }
@@ -966,24 +995,23 @@
   }
 
   function bindEvents() {
+    pushNavState('home', null, null, true);
     els.proxyToggle.checked = state.useProxy;
 
     els.proxyToggle.addEventListener('change', () => {
       state.useProxy = els.proxyToggle.checked;
       if (state.activeChannel) {
         state.proxyOverrides.set(state.activeChannel.url, state.useProxy);
-        playChannel(state.activeChannel);
+        playChannel(state.activeChannel, { syncHistory: false });
       }
     });
 
     els.retryBtn.addEventListener('click', () => {
-      if (state.activeChannel) playChannel(state.activeChannel);
+      if (state.activeChannel) playChannel(state.activeChannel, { syncHistory: false });
     });
 
     els.browseBackBtn.addEventListener('click', () => {
-      state.selectedCategory = null;
-      els.browseSearch.value = '';
-      render();
+      handleBackNavigation();
     });
 
     els.sidebarBackBtn.addEventListener('click', () => {
@@ -1003,6 +1031,33 @@
 
     els.backToCategoriesBtn.addEventListener('click', () => {
       returnToCategoriesView();
+    });
+
+    window.addEventListener('popstate', (event) => {
+      const nav = event.state || { view: 'home', category: null, channelUrl: null };
+      if (nav.view === 'home') {
+        returnToCategoriesView({ keepCategory: false, syncHistory: false });
+        return;
+      }
+      if (nav.view === 'category') {
+        state.selectedCategory = nav.category;
+        if (state.activeChannel) {
+          returnToCategoriesView({ keepCategory: true, syncHistory: false });
+        } else {
+          els.browseSearch.value = '';
+          render();
+        }
+        return;
+      }
+      if (nav.view === 'player' && nav.channelUrl) {
+        const ch = state.channels.find((c) => c.url === nav.channelUrl);
+        if (ch) {
+          state.selectedCategory = nav.category || ch.group;
+          playChannel(ch, { syncHistory: false });
+        } else {
+          returnToCategoriesView({ keepCategory: true, syncHistory: false });
+        }
+      }
     });
 
     els.browseSearch.addEventListener('input', renderBrowseView);
