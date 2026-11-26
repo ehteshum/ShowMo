@@ -6,6 +6,7 @@
   const STALL_THRESHOLD_SEC = 8;
   const RECONNECT_DELAY_MS = 2500;
   const ALL_CHANNELS_CATEGORY = 'All Channels';
+  const HIDDEN_CATEGORIES = new Set(["hop's premium playlist"]);
 
   const els = {
     video: document.getElementById('video'),
@@ -246,19 +247,22 @@
           }
         }
 
-        const isMpd = pending.manifestType === 'mpd' || /\.mpd(\?|$)/i.test(cleanUrl);
-        const format = isMpd ? 'DASH' : /\.m3u8(\?|$)/i.test(cleanUrl) ? 'HLS' : 'STREAM';
-        channels.push({
-          id: `${channels.length + 1}`,
-          chno: pending.chno || String(channels.length + 1),
-          name: pending.name || `Channel ${channels.length + 1}`,
-          logo: pending.logo,
-          group: pending.group || 'General',
-          url: cleanUrl,
-          format,
-          clearKeys: Object.keys(pending.clearKeys).length ? pending.clearKeys : null,
-          headers: pending.headers,
-        });
+        const group = (pending.group || 'General').trim();
+        if (!HIDDEN_CATEGORIES.has(group.toLowerCase())) {
+          const isMpd = pending.manifestType === 'mpd' || /\.mpd(\?|$)/i.test(cleanUrl);
+          const format = isMpd ? 'DASH' : /\.m3u8(\?|$)/i.test(cleanUrl) ? 'HLS' : 'STREAM';
+          channels.push({
+            id: `${channels.length + 1}`,
+            chno: pending.chno || String(channels.length + 1),
+            name: pending.name || `Channel ${channels.length + 1}`,
+            logo: pending.logo,
+            group,
+            url: cleanUrl,
+            format,
+            clearKeys: Object.keys(pending.clearKeys).length ? pending.clearKeys : null,
+            headers: pending.headers,
+          });
+        }
         pending = createEmptyMeta();
       }
     }
